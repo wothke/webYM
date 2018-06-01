@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!--
+ webYM: adapter to use existing YM.js with my generic player
+
+ 	Copyright (C) 2018 Juergen Wothke
+
+ YM.js is a small player for AtariST music - see https://github.com/photonstorm/phaser-plugins/tree/master/YM
+
+ Credits: The visualization used on this page was strongly "inspired" by this demo:
+ http://html5-demos.appspot.com/static/webaudio/createMediaSourceElement.html
+-->
+<meta http-equiv="X-UA-Compatible" content="chrome=1" />
+<title>webYM: AtariST music</title>
+
+<meta name="description" content="example demonstrating the integration of existing 3rd party JavaScript emus into my generic player">
+<meta name="author" content="Juergen Wothke">
+<meta name="keywords" content="Web Audio API, HTML5, JavaScript, music, AtariST">
+
+<link href="stdlib/font.css" rel="stylesheet" type="text/css">
+<link href="stdlib/common.css" rel="stylesheet" type="text/css">
+<link href="add_on.css" rel="stylesheet" type="text/css">
+
+<link rel="image_src" href="screenshot.gif" />
+<meta property="og:image" content="http://www.wothke.ch/webYM/screenshot.gif" />
+
+<link rel="icon" href="favicon.ico" type="image/x-icon">
+<link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
+<link type="image/x-icon" href="favicon.ico" />
+
+<script type="text/javascript" src="stdlib/jquery1.11.min.js"></script>
+<script type="text/javascript" src="stdlib/jquery.details.min.js"></script>
+<script type="text/javascript" src="stdlib/scriptprocessor_player.min.js"></script>
+
+<script>window.openDetails=false;</script>
+<script type="text/javascript" src="stdlib/mini_display.js"></script>
+<script type="text/javascript" src="stdlib/mini_controls.js"></script>
+
+<script type="text/javascript" src="stdlib/ym_tracer.js"></script>
+<script type="text/javascript" src="backend_ym.js"></script>
+<script>
+var playerControls;
+var	songDisplay;
+var ymDisplay;
+
+YMDisplay = function (ymTracer, canvId1,canvId2,canvId3) {
+	this.v1 = new VoiceDisplay(canvId1, function() { return ymTracer.getVolumeVoice0();});
+	this.v2 = new VoiceDisplay(canvId2, function() { return ymTracer.getVolumeVoice1();});
+	this.v3 = new VoiceDisplay(canvId3, function() { return ymTracer.getVolumeVoice2();});
+};
+
+YMDisplay.prototype = {
+	reqAnimationFrame: function() {
+		window.requestAnimationFrame(this.redraw.bind(this));
+	},
+	redraw: function() {
+		this.v1.redrawGraph();		
+		this.v2.redrawGraph();		
+		this.v3.redrawGraph();		
+		this.reqAnimationFrame();	
+	},	
+};
+
+	
+// configure what music infos to display in SongDisplay
+YMDisplayAccessor = (function(){ var $this = function (doGetSongInfo) {
+		$this.base.call(this, doGetSongInfo);
+	}; 
+	extend(DisplayAccessor, $this, {
+		getDisplayTitle: function() 	{ return "YM.js";},
+		getDisplaySubtitle: function() 	{ return "AtariST nostalgia";},
+		getDisplayLine1: function() { return this.getSongInfo().title;},
+		getDisplayLine2: function() { return this.getSongInfo().autor; },
+		getDisplayLine3: function() { return this.getSongInfo().comment; }
+	});	return $this; })();
+		
+// link player events to "controls" and "display"
+function doOnTrackEnd(){
+	if (playerControls) playerControls.playNextSong();  
+}
+function doOnTrackReadyToPlay(){ 	
+	ScriptNodePlayer.getInstance().play();
+	songDisplay.redrawSongInfo();
+	ymDisplay.redraw();
+}
+// depending on the browser/timing the player may be ready before or after (see WASM) init(), i.e.
+// the startup sequence must handle both cases (music can only be started when
+// both the player is ready and init() has been completed..)
+var playerReady= false;		
+function doOnPlayerReady() {
+	playerReady= true;
+	if (playerControls) playerControls.playNextSong(); // playerControls are used to check for init()
+}
+
+function init() {
+	window.ymTracer= new YmTracer(8192);
+		
+	// --------------------------- SID music player -----------------------
+	var basePath= '';		// not needed here
+	ScriptNodePlayer.createInstance(new YMBackendAdapter(), basePath, [], true, doOnPlayerReady,
+										doOnTrackReadyToPlay, doOnTrackEnd, function(){}, ymTracer);
+		
+	// --------------------------- UI - basic player controls --------------
+	var songs = [
+		'music/Scout.ym',
+	];
+	playerControls= new BasicPlayerControls(songs, false, true,
+				(function(someSong) {
+					if (someSong.charAt(0) == '/') {				
+						var arr= someSong.split(";");					
+						var track= arr.length>1?parseInt(arr[1]):-1;
+						var timeout= arr.length>2?parseInt(arr[2]):-1;
+
+						var url= arr[0];
+							
+						var options= {};
+						options.track= track;	// NOT supported by YM.js
+						options.timeout= timeout;
+											
+						return [url, options];
+					} else {
+						// drag&drop
+						return [someSong, new Object()];
+					}
+				}),
+				0, -1
+			);
+
+	// limit rendering to 50% of the available time
+	songDisplay= new SongDisplay(new YMDisplayAccessor((function(){return playerControls.getSongInfo();})), 
+								[0x1DF817], 3, 0.5, (function(){playerControls.animate()}));
+	ymDisplay= new YMDisplay(ymTracer, 'voice1Canvas', 'voice2Canvas', 'voice3Canvas');
+
+	if (playerReady) playerControls.playNextSong();	// player was ready before it could trigger the playback
+}
+</script>
+<script type="text/javascript" src="stdlib/analytics.js"></script>
+</head>
+
+<body onload="init();">
+<div class="tooltip" id="tooltip" alt= "This is a hobby project, but it costs not only time to regularily maintain this site but also money to pay for the internet service provider (etc). If you want to keep this site up and running.. or if you just like my work (see https://jwothke.wordpress.com/) and you'd like to see more of it in the future, please make a contribution. Thank you!"></div>
+
+<details>
+  <summary>What's this?</summary>
+  <div>
+  <p>This page demonstrates how existing 3rd party JavaScript emulators can be integrated with my generic 
+  player - using <a href="https://github.com/photonstorm/phaser-plugins/tree/master/YM" target="_blank">YM.js</a> as an example.</p>
+ 
+  <p>2018 by Juergen Wothke  (The source code can be found <a target="_blank" href="https://github.com/wothke/">here</a>.)</p>
+ 
+  <p>You'll need a JavaScript/WebAudio enabled browser to make it play the music.</p>
+  
+  <p>The music samples are calculated on the fly by running the YM.js emulation logic. You can bring your own .YM music 
+  files by drag&dropping them onto the below AtariST image.</p>  
+ 
+  <p>Please use the below controls to navigate between the songs that you have dropped on the player:
+  <span id="controls"></span>
+  <p>Here a realtime view of some internals of the respective emulator:</p>
+  <div id="sidVoice1">voice 1<canvas id="voice1Canvas" width="40" height="512"></canvas></div>  
+  <div id="sidVoice2">voice 2<canvas id="voice2Canvas" width="40" height="512"></canvas></div>  
+  <div id="sidVoice3">voice 3<canvas id="voice3Canvas" width="40" height="512"></canvas></div>  
+  <div class="slidecontainer">
+  Zoom: <input type="range" min="1" max="5" value="5" class="slider" id="zoom" onchange="function(e){ this.setVolume(gain.value/255); }">
+  <script>
+	var slider = document.getElementById("zoom");
+	slider.onchange = function(e){ window.ymTracer.setOutputSize(246 << slider.value)  };		
+  </script>
+</div>
+
+ </div>
+</details>
+<aside></aside>
+<section>
+  <div id="logo">
+		<!-- in new Chrome the SHIT reflections disapear dependig on the canvas height.. what a fucking joke -->
+		<div id="moz-reflect-logo"><canvas  id="logoCanvas"  width="220" height="100"></canvas></div>	
+  </div>
+  
+  <div id="spectrum" >
+		<!-- use "hight" greater than 80 and the fucking reflection is gone.. FUCK YOU IDIOTS -->
+		<div id="moz-reflect-spectrum"><canvas id="spectrumCanvas" width="800" height="80"></canvas></div>
+  </div>
+
+  <div id="drop" class="drop"><img src="atariST.gif" /></div><!--see BasicPlayerControls-->
+</section>
+</body>
+</html>
